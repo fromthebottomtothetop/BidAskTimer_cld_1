@@ -148,9 +148,9 @@ def draw_text_input(screen, rect, text, font_small, font_std, cfg: AppConfig,
 # Scale-Modus Metadaten
 # ------------------------------------------------------------------
 _SCALE_LABELS = {
-    SCALE_RELATIVE: ("REL",  (120, 120, 60),  "Scale: Relative  (100%)"),
-    SCALE_ABSOLUTE: ("ABS",  (40,  100, 160), "Scale: Absolute  (50%)"),
-    SCALE_FIXED:    ("FIX",  (60,  140, 80),  "Scale: Fixed Scale"),
+    SCALE_RELATIVE: ("REL",  (120, 120, 60),  "Scale: RELATIVE  (groesster=100%)"),
+    SCALE_ABSOLUTE: ("ABS",  (40,  100, 160), "Scale: ABSOLUTE  (Bid+Ask=100%)"),
+    SCALE_FIXED:    ("FIX",  (60,  140, 80),  "Scale: FIXED     (festes Maximum)"),
 }
 
 
