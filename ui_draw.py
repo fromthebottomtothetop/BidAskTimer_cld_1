@@ -1,0 +1,400 @@
+# -*- coding: utf-8 -*-
+import pygame
+import time
+from datetime import datetime
+
+from model import AppConfig, AppState
+
+
+def create_hue_bar(w: int, h: int) -> pygame.Surface:
+    surf = pygame.Surface((w, h))
+    for y in range(h):
+        hue = (y / h) * 360
+        c = pygame.Color(0)
+        c.hsva = (hue, 100, 100, 100)
+        pygame.draw.line(surf, c, (0, y), (w, y))
+    return surf
+
+
+def create_sv_overlay(w: int, h: int) -> pygame.Surface:
+    surf = pygame.Surface((w, h), pygame.SRCALPHA)
+    for x in range(w):
+        alpha = 255 - int((x / w) * 255)
+        pygame.draw.line(surf, (255, 255, 255, alpha), (x, 0), (x, h))
+    surf2 = pygame.Surface((w, h), pygame.SRCALPHA)
+    for y in range(h):
+        alpha = int((y / h) * 255)
+        pygame.draw.line(surf2, (0, 0, 0, alpha), (0, y), (w, y))
+    surf.blit(surf2, (0, 0))
+    return surf
+
+
+def rgb_to_hsv(rgb: tuple) -> tuple[float, float, float]:
+    c = pygame.Color(*rgb)
+    h, s, v, a = c.hsva
+    return h, s / 100.0, v / 100.0
+
+
+def hsv_to_rgb(h: float, s: float, v: float) -> tuple[int, int, int]:
+    c = pygame.Color(0)
+    c.hsva = (h % 360, min(100, s * 100), min(100, v * 100), 100)
+    return (c.r, c.g, c.b)
+
+
+def set_picker_from_color(state: AppState, rgb: tuple) -> None:
+    state.picker_hue, state.picker_sat, state.picker_val = rgb_to_hsv(rgb)
+
+
+def apply_picker_to_active_color(state: AppState) -> None:
+    rgb = hsv_to_rgb(state.picker_hue, state.picker_sat, state.picker_val)
+    if state.color_edit_mode == "BID":
+        state.temp_color_bid = rgb
+    elif state.color_edit_mode == "ASK":
+        state.temp_color_ask = rgb
+    elif state.color_edit_mode == "BG":
+        state.temp_color_bg = rgb
+    elif state.color_edit_mode == "GRID":
+        state.temp_color_grid = rgb
+    elif state.color_edit_mode == "TEXT":
+        state.temp_color_text = rgb
+    elif state.color_edit_mode == "BTN":
+        state.temp_color_btn = rgb
+
+
+def format_number(cfg: AppConfig, val: float) -> str:
+    if cfg.crypto_mode:
+        return f"{val:.1f}"
+    return f"{int(val)}"
+
+
+def format_price(val: float) -> str:
+    try:
+        s = f"{float(val):.8f}"
+        s = s.rstrip("0").rstrip(".")
+        return s if s else "0"
+    except Exception:
+        return "0"
+
+
+def get_quality_status(cfg: AppConfig, state: AppState, input_client_count: int) -> tuple[tuple[int, int, int], str]:
+    now = time.time()
+    age = (now - state.last_rx_time) if state.last_rx_time > 0 else 999.0
+
+    if input_client_count == 0 and age > (cfg.stale_sec * 1.5):
+        return (220, 70, 70), "DISCONNECTED"
+
+    if age <= cfg.green_rx_sec:
+        col = (70, 200, 90)
+        txt = f"OK {age*1000:.0f}ms"
+    elif age <= cfg.yellow_rx_sec:
+        col = (230, 200, 70)
+        txt = f"LAG {age*1000:.0f}ms"
+    else:
+        col = (220, 70, 70)
+        txt = f"STALE {age:.1f}s"
+
+    stale_parts = []
+    if state.last_rx_time > 0:
+        if (now - state.last_change_bid_t) > cfg.stale_sec:
+            stale_parts.append("BID")
+        if (now - state.last_change_ask_t) > cfg.stale_sec:
+            stale_parts.append("ASK")
+        if (now - state.last_change_price_t) > cfg.stale_sec:
+            stale_parts.append("PRICE")
+
+    if stale_parts and age <= cfg.yellow_rx_sec:
+        txt += " | S:" + ",".join(stale_parts)
+
+    return col, txt
+
+
+def draw_button(screen, rect, text, font_std, cfg: AppConfig, hover=False, override_color=None, text_color=None):
+    if override_color:
+        color = override_color
+        if hover:
+            color = (min(color[0] + 30, 255), min(color[1] + 30, 255), min(color[2] + 30, 255))
+    else:
+        color = cfg.color_btn_hover if hover else cfg.color_btn
+    t_col = text_color if text_color else cfg.color_text
+    pygame.draw.rect(screen, color, rect, border_radius=5)
+    lbl = font_std.render(text, True, t_col)
+    screen.blit(lbl, (rect.centerx - lbl.get_width() // 2, rect.centery - lbl.get_height() // 2))
+
+
+def draw_resize_grip(screen, w, h, cfg: AppConfig):
+    for i in range(3):
+        offset = i * 4
+        pygame.draw.line(screen, cfg.color_grip, (w - 7 - offset, h - 7), (w - 7, h - 7 - offset), 2)
+
+
+def draw_menu_dots(screen, rect, cfg: AppConfig, hover=False):
+    color = (150, 150, 150) if hover else cfg.color_menu
+    radius = 2
+    gap = 8
+    cx, cy = rect.centerx, rect.centery
+    pygame.draw.circle(screen, color, (cx, cy - gap), radius)
+    pygame.draw.circle(screen, color, (cx, cy), radius)
+    pygame.draw.circle(screen, color, (cx, cy + gap), radius)
+
+
+def draw_text_input(screen, rect, text, font_small, font_std, cfg: AppConfig, active=False, label=""):
+    if label:
+        lbl = font_small.render(label, True, cfg.color_text)
+        screen.blit(lbl, (rect.x, rect.y - 18))
+    bg = cfg.color_input_active if active else cfg.color_input_bg
+    pygame.draw.rect(screen, bg, rect, border_radius=4)
+    if active:
+        pygame.draw.rect(screen, cfg.color_bid, rect, 1, border_radius=4)
+    else:
+        pygame.draw.rect(screen, (80, 80, 80), rect, 1, border_radius=4)
+
+    txt_surf = font_std.render(text, True, cfg.color_text)
+    old_clip = screen.get_clip()
+    screen.set_clip(rect.inflate(-4, -4))
+    screen.blit(txt_surf, (rect.x + 5, rect.y + (rect.height - txt_surf.get_height()) // 2))
+    screen.set_clip(old_clip)
+
+
+def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
+               font_big, font_std, font_small, font_micro,
+               hue_bar_surface, sat_val_overlay,
+               input_client_count: int):
+    screen.fill(cfg.color_bg)
+
+    chart_base_y = cfg.window_h - 90
+    chart_top_y = 60
+    chart_height = chart_base_y - chart_top_y
+
+    grid_margin = 26
+    grid_steps = [0.0, 0.25, 0.50, 0.75, 1.0]
+    for p in grid_steps:
+        y_pos = chart_base_y - (chart_height * p)
+        pygame.draw.line(screen, cfg.color_grid, (grid_margin, y_pos), (cfg.window_w - grid_margin, y_pos), 1)
+
+        label_text = f"{int(p * 100)}%"
+        lbl = font_small.render(label_text, True, cfg.color_grid)
+        screen.blit(lbl, (grid_margin - 25, y_pos - 8))
+
+    # CPU + STATUS
+    x_cursor = 5
+    y_top = 5
+
+    if cfg.show_cpu_usage and state.current_cpu_str:
+        cpu_surf = font_micro.render(state.current_cpu_str, True, (120, 120, 120))
+        screen.blit(cpu_surf, (x_cursor, y_top))
+        x_cursor += cpu_surf.get_width() + 10
+
+    if cfg.show_status_indicator:
+        dot_col, status_txt = get_quality_status(cfg, state, input_client_count)
+        pygame.draw.circle(screen, dot_col, (x_cursor + 5, y_top + 7), 3)
+        x_cursor += 14
+        status_surf = font_micro.render(status_txt, True, (120, 120, 120))
+        screen.blit(status_surf, (x_cursor, y_top))
+
+    max_data_val = max(state.current_bid_vol, state.current_ask_vol, 10)
+    pixels_per_vol = chart_height / max_data_val
+
+    half_window = cfg.window_w / 2
+    actual_bar_width = int((half_window * (cfg.bar_width_percent / 100.0)))
+
+    left_center = half_window / 2
+    right_center = half_window + (half_window / 2)
+
+    h_bid = int(state.current_bid_vol * pixels_per_vol)
+    r_bid = pygame.Rect(0, 0, actual_bar_width, h_bid)
+    r_bid.centerx = int(left_center) + 15
+    r_bid.bottom = int(chart_base_y)
+    pygame.draw.rect(screen, cfg.color_bid, r_bid, border_top_left_radius=5, border_top_right_radius=5)
+
+    h_ask = int(state.current_ask_vol * pixels_per_vol)
+    r_ask = pygame.Rect(0, 0, actual_bar_width, h_ask)
+    r_ask.centerx = int(right_center) - 15
+    r_ask.bottom = int(chart_base_y)
+    pygame.draw.rect(screen, cfg.color_ask, r_ask, border_top_left_radius=5, border_top_right_radius=5)
+
+    str_bid = format_number(cfg, state.current_bid_vol)
+    if str_bid != state.cache_bid_val:
+        state.cache_bid_val = str_bid
+        state.cache_bid_surf = font_big.render(str_bid, True, cfg.color_text)
+
+    str_ask = format_number(cfg, state.current_ask_vol)
+    if str_ask != state.cache_ask_val:
+        state.cache_ask_val = str_ask
+        state.cache_ask_surf = font_big.render(str_ask, True, cfg.color_text)
+
+    if state.cache_bid_surf:
+        screen.blit(state.cache_bid_surf, (r_bid.centerx - state.cache_bid_surf.get_width() // 2,
+                                           r_bid.y - state.cache_bid_surf.get_height() - cfg.text_gap))
+    if state.cache_ask_surf:
+        screen.blit(state.cache_ask_surf, (r_ask.centerx - state.cache_ask_surf.get_width() // 2,
+                                           r_ask.y - state.cache_ask_surf.get_height() - cfg.text_gap))
+
+    lbl_bid = font_std.render("BID", True, cfg.color_bid)
+    screen.blit(lbl_bid, (r_bid.centerx - lbl_bid.get_width() // 2, cfg.window_h - 80))
+    lbl_ask = font_std.render("ASK", True, cfg.color_ask)
+    screen.blit(lbl_ask, (r_ask.centerx - lbl_ask.get_width() // 2, cfg.window_h - 80))
+
+    if cfg.show_header:
+        header_txt = font_std.render(f"BidAskTimer_cld_1 - {state.latest_time_str}", True, cfg.color_header)
+        screen.blit(header_txt, (cfg.window_w // 2 - header_txt.get_width() // 2, 10))
+
+    bottom_y = cfg.window_h - 50
+    if cfg.show_controls:
+        draw_button(screen, rects["minus"], "-", font_std, cfg, hover_states.get("minus", False))
+        draw_button(screen, rects["plus"], "+", font_std, cfg, hover_states.get("plus", False))
+
+        if state.editing_time_window:
+            tb_rect = rects["time_display"]
+            pygame.draw.rect(screen, cfg.color_input_bg, tb_rect, border_radius=4)
+            pygame.draw.rect(screen, cfg.color_bid, tb_rect, 1, border_radius=4)
+            inp_surf = font_std.render(state.input_time_str, True, cfg.color_text)
+            screen.blit(inp_surf, (tb_rect.centerx - inp_surf.get_width() // 2, tb_rect.centery - inp_surf.get_height() // 2))
+        else:
+            time_txt = font_std.render(f"{cfg.time_window_seconds}s", True, cfg.color_text)
+            screen.blit(time_txt, (cfg.window_w // 2 - time_txt.get_width() // 2, cfg.window_h - 45))
+            if hover_states.get("time_display"):
+                pygame.draw.rect(screen, (100, 100, 100), rects["time_display"], 1, border_radius=4)
+    else:
+        if state.action_running:
+            draw_button(screen, rects["overlay"], "RESET", font_std, cfg, hover_states.get("overlay", False))
+            if state.action_start_time:
+                delta = datetime.now() - state.action_start_time
+                total_seconds = int(delta.total_seconds())
+                mins = total_seconds // 60
+                secs = total_seconds % 60
+                timer_str = f"{mins:02}:{secs:02}"
+                timer_lbl = font_small.render(timer_str, True, cfg.color_text)
+                screen.blit(timer_lbl, (cfg.window_w // 2 - timer_lbl.get_width() // 2, bottom_y - 18))
+        else:
+            draw_button(screen, rects["overlay"], "START", font_std, cfg, hover_states.get("overlay", False), override_color=(40, 140, 40))
+
+    draw_resize_grip(screen, cfg.window_w, cfg.window_h, cfg)
+    draw_menu_dots(screen, rects["menu"], cfg, hover_states.get("menu", False))
+
+    # Menu drop
+    if state.show_menu and not (state.show_settings_modal or state.show_color_modal or state.show_advanced_modal):
+        pygame.draw.rect(screen, cfg.color_menu_bg, rects["menu_drop"], border_radius=5)
+        pygame.draw.rect(screen, (80, 80, 80), rects["menu_drop"], 1, border_radius=5)
+        m_pos = pygame.mouse.get_pos()
+        for i, item_text in enumerate(state.menu_items):
+            item_rect = pygame.Rect(rects["menu_drop"].x, rects["menu_drop"].y + i * cfg.menu_item_height, cfg.menu_width, cfg.menu_item_height)
+            if item_rect.collidepoint(m_pos):
+                pygame.draw.rect(screen, cfg.color_menu_hover, item_rect, border_radius=3)
+            txt_surf = font_small.render(item_text, True, cfg.color_text)
+            screen.blit(txt_surf, (item_rect.x + 10, item_rect.centery - txt_surf.get_height() // 2))
+
+    # Dark overlay when modal
+    if state.show_settings_modal or state.show_color_modal or state.show_advanced_modal:
+        s = pygame.Surface((cfg.window_w, cfg.window_h))
+        s.set_alpha(150)
+        s.fill((0, 0, 0))
+        screen.blit(s, (0, 0))
+
+    # Settings modal
+    if state.show_settings_modal:
+        modal_rect = rects["modal"]
+        pygame.draw.rect(screen, cfg.color_menu_bg, modal_rect, border_radius=8)
+        pygame.draw.rect(screen, cfg.color_grid, modal_rect, 2, border_radius=8)
+
+        draw_text_input(screen, rects["inp_host"], state.input_host_str, font_small, font_std, cfg, state.active_input_idx == 0, "Server IP:")
+        draw_text_input(screen, rects["inp_port"], state.input_port_str, font_small, font_std, cfg, state.active_input_idx == 1, "Input Port:")
+        draw_text_input(screen, rects["inp_outport"], state.input_outport_str, font_small, font_std, cfg, state.active_input_idx == 2, "Output Port:")
+
+        draw_button(screen, rects["btn_save"], "Save", font_std, cfg, hover_states.get("save", False), override_color=(40, 100, 40))
+        draw_button(screen, rects["btn_cancel"], "Cancel", font_std, cfg, hover_states.get("cancel", False), override_color=(100, 40, 40))
+
+    # Advanced modal
+    if state.show_advanced_modal:
+        modal_rect = rects["adv_modal"]
+        pygame.draw.rect(screen, cfg.color_menu_bg, modal_rect, border_radius=8)
+        pygame.draw.rect(screen, cfg.color_grid, modal_rect, 2, border_radius=8)
+        title_surf = font_std.render("Advanced Settings", True, cfg.color_text)
+        screen.blit(title_surf, (modal_rect.centerx - title_surf.get_width() // 2, modal_rect.y + 10))
+
+        col_top = (40, 140, 40) if state.temp_adv_always_on_top else (100, 40, 40)
+        col_head = (40, 140, 40) if state.temp_adv_show_header else (100, 40, 40)
+        col_cpu = (40, 140, 40) if state.temp_adv_show_cpu else (100, 40, 40)
+        col_round = (40, 140, 40) if state.temp_adv_rounded else (100, 40, 40)
+        col_status = (40, 140, 40) if state.temp_adv_show_status else (100, 40, 40)
+        col_crypto = (40, 140, 40) if state.temp_adv_crypto else (100, 40, 40)
+
+        draw_button(screen, rects["btn_adv_top"], "Always on Top", font_std, cfg, hover_states.get("adv_top", False), override_color=col_top)
+        draw_button(screen, rects["btn_adv_header"], "Header", font_std, cfg, hover_states.get("adv_header", False), override_color=col_head)
+        draw_button(screen, rects["btn_adv_cpu"], "Show CPU", font_std, cfg, hover_states.get("adv_cpu", False), override_color=col_cpu)
+        draw_button(screen, rects["btn_adv_round"], "Round Corners", font_std, cfg, hover_states.get("adv_round", False), override_color=col_round)
+        draw_button(screen, rects["btn_adv_status"], "Ampel + Stale", font_std, cfg, hover_states.get("adv_status", False), override_color=col_status)
+        draw_button(screen, rects["btn_adv_crypto"], "Crypto Mode", font_std, cfg, hover_states.get("adv_crypto", False), override_color=col_crypto)
+
+        draw_text_input(screen, rects["inp_lerp"], state.input_lerp_str, font_small, font_std, cfg, state.active_adv_input_idx == 0, "Animation: smooth (0) < (100) fast:")
+        draw_text_input(screen, rects["inp_buff"], state.input_buffer_str, font_small, font_std, cfg, state.active_adv_input_idx == 1, "Buffer Size:")
+        draw_text_input(screen, rects["inp_width"], state.input_width_str, font_small, font_std, cfg, state.active_adv_input_idx == 2, "Bar Width (%):")
+
+        draw_button(screen, rects["btn_buf_arrow"], "?", font_std, cfg, hover_states.get("buf_arrow", False), override_color=(70, 70, 70))
+        draw_button(screen, rects["adv_save"], "Save", font_std, cfg, hover_states.get("adv_save", False), override_color=(40, 100, 40))
+        draw_button(screen, rects["adv_cancel"], "Cancel", font_std, cfg, hover_states.get("adv_cancel", False), override_color=(100, 40, 40))
+
+        if state.show_buffer_dropdown:
+            dd_rect = rects["dd_container"]
+            pygame.draw.rect(screen, cfg.color_menu_bg, dd_rect, border_radius=5)
+            pygame.draw.rect(screen, cfg.color_grid, dd_rect, 1, border_radius=5)
+            opts = [("2048", rects["dd_opt_1"]), ("4096", rects["dd_opt_2"]), ("8192", rects["dd_opt_3"])]
+            for val, rr in opts:
+                if rr.collidepoint(pygame.mouse.get_pos()):
+                    pygame.draw.rect(screen, cfg.color_menu_hover, rr)
+                lbl = font_std.render(val, True, cfg.color_text)
+                screen.blit(lbl, (rr.x + 10, rr.centery - lbl.get_height() // 2))
+
+    # Color modal
+    if state.show_color_modal:
+        c_rect = rects["col_modal"]
+        pygame.draw.rect(screen, cfg.color_menu_bg, c_rect, border_radius=8)
+        pygame.draw.rect(screen, cfg.color_grid, c_rect, 2, border_radius=8)
+        title_surf = font_std.render("Color Settings", True, cfg.color_text)
+        screen.blit(title_surf, (c_rect.centerx - title_surf.get_width() // 2, c_rect.y + 10))
+
+        def outline_if(mode: str):
+            return 2 if state.color_edit_mode == mode else 0
+
+        draw_button(screen, rects["c_bid"], "BID Color", font_std, cfg, False, override_color=state.temp_color_bid, text_color=(255, 255, 255))
+        if outline_if("BID"): pygame.draw.rect(screen, (255, 255, 255), rects["c_bid"], 2, border_radius=5)
+
+        draw_button(screen, rects["c_ask"], "ASK Color", font_std, cfg, False, override_color=state.temp_color_ask, text_color=(255, 255, 255))
+        if outline_if("ASK"): pygame.draw.rect(screen, (255, 255, 255), rects["c_ask"], 2, border_radius=5)
+
+        draw_button(screen, rects["c_bg"], "BG Color", font_std, cfg, False, override_color=state.temp_color_bg, text_color=(255, 255, 255))
+        if outline_if("BG"): pygame.draw.rect(screen, (255, 255, 255), rects["c_bg"], 2, border_radius=5)
+
+        draw_button(screen, rects["c_grid"], "GRID Color", font_std, cfg, False, override_color=state.temp_color_grid, text_color=(255, 255, 255))
+        if outline_if("GRID"): pygame.draw.rect(screen, (255, 255, 255), rects["c_grid"], 2, border_radius=5)
+
+        draw_button(screen, rects["c_btn"], "BTN Color", font_std, cfg, False, override_color=state.temp_color_btn, text_color=(255, 255, 255))
+        if outline_if("BTN"): pygame.draw.rect(screen, (255, 255, 255), rects["c_btn"], 2, border_radius=5)
+
+        draw_button(screen, rects["c_txt"], "TEXT Color", font_std, cfg, False, override_color=state.temp_color_text, text_color=(255, 255, 255))
+        if outline_if("TEXT"): pygame.draw.rect(screen, (255, 255, 255), rects["c_txt"], 2, border_radius=5)
+
+        theme_txt = f"Theme: {cfg.theme_name.title()}"
+        draw_button(screen, rects["c_theme"], theme_txt, font_std, cfg, hover_states.get("c_theme", False))
+
+        pbox = rects["p_box"]
+        pbar = rects["p_bar"]
+
+        pure_hue_col = pygame.Color(0)
+        pure_hue_col.hsva = (state.picker_hue, 100, 100, 100)
+        pygame.draw.rect(screen, pure_hue_col, pbox)
+        screen.blit(sat_val_overlay, pbox)
+
+        cx = pbox.x + (state.picker_sat * cfg.picker_box_size)
+        cy = pbox.y + ((1.0 - state.picker_val) * cfg.picker_box_size)
+        pygame.draw.circle(screen, (0, 0, 0), (int(cx), int(cy)), 6, 2)
+        pygame.draw.circle(screen, (255, 255, 255), (int(cx), int(cy)), 4, 2)
+        pygame.draw.rect(screen, (100, 100, 100), pbox, 1)
+
+        screen.blit(hue_bar_surface, pbar)
+        pygame.draw.rect(screen, (100, 100, 100), pbar, 1)
+        hy = pbar.y + (state.picker_hue / 360.0) * cfg.picker_box_size
+        pygame.draw.rect(screen, (0, 0, 0), (pbar.x - 2, int(hy) - 3, cfg.picker_bar_width + 4, 6), 2)
+
+        draw_button(screen, rects["c_save"], "Save", font_std, cfg, hover_states.get("c_save", False), override_color=(40, 100, 40))
+        draw_button(screen, rects["c_cancel"], "Cancel", font_std, cfg, hover_states.get("c_cancel", False), override_color=(100, 40, 40))
+
