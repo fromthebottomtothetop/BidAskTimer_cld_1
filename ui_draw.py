@@ -80,10 +80,10 @@ def get_quality_status(cfg: AppConfig, state: AppState, input_client_count: int)
 
     if age <= cfg.green_rx_sec:
         col = (70, 200, 90)
-        txt = f"OK {age*1000:.0f}ms"
+        txt = f"OK {age:.1f}s"
     elif age <= cfg.yellow_rx_sec:
         col = (230, 200, 70)
-        txt = f"LAG {age*1000:.0f}ms"
+        txt = f"LAG {age:.1f}s"
     else:
         col = (220, 70, 70)
         txt = f"STALE {age:.1f}s"
@@ -337,7 +337,8 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
                                 tb.centery - inp_s.get_height() // 2))
         else:
             t_surf = font_std.render(f"{cfg.time_window_seconds}s", True, cfg.color_text)
-            screen.blit(t_surf, (cfg.window_w // 2 - t_surf.get_width() // 2, cfg.window_h - 45))
+            td = rects["time_display"]
+            screen.blit(t_surf, (td.centerx - t_surf.get_width() // 2, td.centery - t_surf.get_height() // 2))
             if hover_states.get("time_display"):
                 pygame.draw.rect(screen, (100, 100, 100), rects["time_display"], 1, border_radius=4)
     else:
@@ -353,6 +354,18 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
         else:
             draw_button(screen, rects["overlay"], "START", font_std, cfg,
                         hover_states.get("overlay", False), override_color=(40, 140, 40))
+
+    # FIXED mode: Fixed-Max Controls rechts
+    if getattr(cfg, "scale_mode", 0) == SCALE_FIXED and cfg.show_controls:
+        draw_button(screen, rects["fix_minus"], "-", font_std, cfg,
+                    hover_states.get("fix_minus", False))
+        draw_button(screen, rects["fix_plus"],  "+", font_std, cfg,
+                    hover_states.get("fix_plus",  False))
+        fix_val = int(getattr(cfg, "fixed_scale_max", 500))
+        fix_surf = font_std.render(str(fix_val), True, cfg.color_text)
+        fd = rects["fix_display"]
+        screen.blit(fix_surf, (fd.centerx - fix_surf.get_width() // 2,
+                               fd.centery - fix_surf.get_height() // 2))
 
     draw_resize_grip(screen, cfg.window_w, cfg.window_h, cfg)
     draw_menu_dots(screen, rects["menu"], cfg, hover_states.get("menu", False))

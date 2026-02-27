@@ -40,6 +40,8 @@ def compute_hover_states(cfg: AppConfig, state: AppState, rects: dict, mouse_pos
             hover["minus"]        = rects["minus"].collidepoint(mouse_pos)
             hover["plus"]         = rects["plus"].collidepoint(mouse_pos)
             hover["time_display"] = rects["time_display"].collidepoint(mouse_pos)
+            hover["fix_minus"]    = rects["fix_minus"].collidepoint(mouse_pos)
+            hover["fix_plus"]     = rects["fix_plus"].collidepoint(mouse_pos)
         else:
             hover["overlay"] = rects["overlay"].collidepoint(mouse_pos)
         hover["menu"] = rects["menu"].collidepoint(mouse_pos)
@@ -87,7 +89,8 @@ def update_cursor(cfg: AppConfig, state: AppState, rects: dict, hover: dict, mou
     else:
         if rects["resize"].collidepoint(mouse_pos) or state.resize_active:
             cursor = pygame.SYSTEM_CURSOR_SIZENWSE
-        elif hover.get("menu") or hover.get("minus") or hover.get("plus") or hover.get("overlay"):
+        elif (hover.get("menu") or hover.get("minus") or hover.get("plus") or
+              hover.get("overlay") or hover.get("fix_minus") or hover.get("fix_plus")):
             cursor = pygame.SYSTEM_CURSOR_HAND
         elif hover.get("time_display") and cfg.show_controls:
             cursor = pygame.SYSTEM_CURSOR_IBEAM
@@ -446,6 +449,14 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                     elif rects["time_display"].collidepoint(event.pos):
                         state.editing_time_window = True
                         state.input_time_str = str(cfg.time_window_seconds)
+                    elif rects["fix_minus"].collidepoint(event.pos):
+                        cur = getattr(cfg, "fixed_scale_max", 500.0)
+                        cfg.fixed_scale_max = max(50.0, cur - 50.0)
+                        state.request_save()
+                    elif rects["fix_plus"].collidepoint(event.pos):
+                        cur = getattr(cfg, "fixed_scale_max", 500.0)
+                        cfg.fixed_scale_max = cur + 50.0
+                        state.request_save()
                 else:
                     if rects["overlay"].collidepoint(event.pos):
                         state.action_running = not state.action_running

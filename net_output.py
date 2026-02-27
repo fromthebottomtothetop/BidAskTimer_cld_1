@@ -101,12 +101,23 @@ class OutputServer:
             self.stop()
 
     def broadcast(self, payload_line: str) -> None:
+        # FIX #4: Lock NUR fuer das Kopieren der Liste halten.
+        # sendall() laeuft ausserhalb des Locks damit ein langsamer/blockender
+        # Client nicht den gesamten Main-Thread einfriert.
         data = payload_line.encode("utf-8", errors="replace")
         with self._lock:
-            for c in list(self._clients):
-                try:
-                    c.sendall(data)
-                except Exception:
+            clients_snapshot = list(self._clients)
+
+        dead = []
+        for c in clients_snapshot:
+            try:
+                c.sendall(data)
+            except Exception:
+                dead.append(c)
+
+        if dead:
+            with self._lock:
+                for c in dead:
                     try:
                         c.close()
                     except Exception:
@@ -116,9 +127,9 @@ class OutputServer:
 
     def maybe_broadcast(self, payload: str) -> None:
         t_now = time.time()
-        if (payload != self._last_sent_payload) and ((t_now - self._last_send_time) >= float(self._cfg.min_send_interval)):
+        if (payload != self._last_sent_payload) and \
+                ((t_now - self._last_send_time) >= float(self._cfg.min_send_interval)):
             self._last_sent_payload = payload
             self._last_send_time = t_now
             if not self._stop.is_set():
                 self.broadcast(payload)
-

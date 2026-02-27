@@ -48,7 +48,34 @@ class InputServer:
                 pass
         self._sock = None
 
+    def _flush_queue(self) -> None:
+        # FIX #1: Alle alten Daten aus der Queue entfernen wenn eine neue
+        # Verbindung aufgebaut wird. Verhindert dass Python nach einem
+        # ATAS-Neustart kurz falsche Werte anzeigt weil noch alte
+        # Basis-Werte in der Queue lagen.
+        flushed = 0
+        while True:
+            try:
+                self._state.data_queue.get_nowait()
+                flushed += 1
+            except Exception:
+                break
+        if flushed > 0:
+            print(f"[INPUT] Queue geflusht: {flushed} alte Eintraege verworfen.")
+
+        # Auch den Akkumulierungs-State zuruecksetzen damit diff-Berechnung
+        # nicht auf alten raw-Werten aufsetzt.
+        self._state.last_raw_bid = 0
+        self._state.last_raw_ask = 0
+        self._state.cont_bid     = 0.0
+        self._state.cont_ask     = 0.0
+        self._state.history.clear()
+
     def _handle_client(self, conn: socket.socket) -> None:
+        # Queue leeren bevor wir die ersten Daten der neuen Verbindung
+        # verarbeiten.
+        self._flush_queue()
+
         with self._lock:
             self._clients.append(conn)
 
@@ -102,4 +129,3 @@ class InputServer:
             self._state.data_queue.put("Error Bind;;;;;0;0;0")
         finally:
             self.stop()
-
