@@ -205,7 +205,7 @@ class AppState:
     cache_bid_surf: object | None = None
     cache_ask_surf: object | None = None
 
-    # Save request flag
+    # Save request flag1
     save_requested: bool = False
 
     def request_save(self) -> None:
@@ -216,3 +216,4 @@ class AppState:
 
     def now_sec(self) -> float:
         return time.time()
+    
