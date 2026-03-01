@@ -113,4 +113,3 @@ def get_cursor_pos() -> tuple[int, int]:
     if not ok:
         return (0, 0)
     return (pt.x, pt.y)
-

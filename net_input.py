@@ -40,7 +40,6 @@ class InputServer:
                 except Exception:
                     pass
             self._clients.clear()
-
         if self._sock:
             try:
                 self._sock.close()
@@ -49,10 +48,6 @@ class InputServer:
         self._sock = None
 
     def _flush_queue(self) -> None:
-        # FIX #1: Alle alten Daten aus der Queue entfernen wenn eine neue
-        # Verbindung aufgebaut wird. Verhindert dass Python nach einem
-        # ATAS-Neustart kurz falsche Werte anzeigt weil noch alte
-        # Basis-Werte in der Queue lagen.
         flushed = 0
         while True:
             try:
@@ -62,9 +57,6 @@ class InputServer:
                 break
         if flushed > 0:
             print(f"[INPUT] Queue geflusht: {flushed} alte Eintraege verworfen.")
-
-        # Auch den Akkumulierungs-State zuruecksetzen damit diff-Berechnung
-        # nicht auf alten raw-Werten aufsetzt.
         self._state.last_raw_bid = 0
         self._state.last_raw_ask = 0
         self._state.cont_bid     = 0.0
@@ -72,13 +64,9 @@ class InputServer:
         self._state.history.clear()
 
     def _handle_client(self, conn: socket.socket) -> None:
-        # Queue leeren bevor wir die ersten Daten der neuen Verbindung
-        # verarbeiten.
         self._flush_queue()
-
         with self._lock:
             self._clients.append(conn)
-
         try:
             buffer = ""
             conn.settimeout(1.0)
@@ -91,7 +79,6 @@ class InputServer:
                     break
                 if not data:
                     break
-
                 buffer += data.decode("utf-8", errors="replace")
                 while "\n" in buffer:
                     line, buffer = buffer.split("\n", 1)
@@ -113,7 +100,6 @@ class InputServer:
             self._sock.bind((self._cfg.host, int(self._cfg.port_in)))
             self._sock.listen()
             print(f"[INPUT] TCP Server running on {self._cfg.host}:{self._cfg.port_in}")
-
             while not self._stop.is_set():
                 try:
                     self._sock.settimeout(1.0)

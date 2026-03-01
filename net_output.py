@@ -14,10 +14,8 @@ class OutputServer:
         self._sock: Optional[socket.socket] = None
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
-
         self._clients: List[socket.socket] = []
         self._lock = threading.Lock()
-
         self._last_sent_payload: str | None = None
         self._last_send_time: float = 0.0
 
@@ -40,7 +38,6 @@ class OutputServer:
                 except Exception:
                     pass
             self._clients.clear()
-
         if self._sock:
             try:
                 self._sock.close()
@@ -51,13 +48,11 @@ class OutputServer:
     def _handle_client(self, conn: socket.socket) -> None:
         with self._lock:
             self._clients.append(conn)
-
         try:
             try:
                 conn.sendall(f"HELLO;{self._cfg.indicator_name}\n".encode("utf-8"))
             except Exception:
                 pass
-
             conn.settimeout(1.0)
             while not self._stop.is_set():
                 try:
@@ -84,7 +79,6 @@ class OutputServer:
             self._sock.bind((self._cfg.host, int(self._cfg.port_out)))
             self._sock.listen()
             print(f"[OUTPUT] TCP Server running on {self._cfg.host}:{self._cfg.port_out}")
-
             while not self._stop.is_set():
                 try:
                     self._sock.settimeout(1.0)
@@ -101,20 +95,15 @@ class OutputServer:
             self.stop()
 
     def broadcast(self, payload_line: str) -> None:
-        # FIX #4: Lock NUR fuer das Kopieren der Liste halten.
-        # sendall() laeuft ausserhalb des Locks damit ein langsamer/blockender
-        # Client nicht den gesamten Main-Thread einfriert.
         data = payload_line.encode("utf-8", errors="replace")
         with self._lock:
             clients_snapshot = list(self._clients)
-
         dead = []
         for c in clients_snapshot:
             try:
                 c.sendall(data)
             except Exception:
                 dead.append(c)
-
         if dead:
             with self._lock:
                 for c in dead:

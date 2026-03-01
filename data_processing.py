@@ -69,7 +69,7 @@ def process_incoming_data(cfg: AppConfig, state: AppState) -> None:
                     state.last_change_price_t = now_sec
                     state.last_stale_price    = state.latest_price
 
-            # KRITISCH 1: Mode-Feld explizit lesen
+            # Mode-Feld explizit lesen
             new_bar_flag = 0
             if len(parts) >= 7:
                 try: new_bar_flag = int(parts[6])
@@ -97,7 +97,16 @@ def process_incoming_data(cfg: AppConfig, state: AppState) -> None:
 
             eps_reset = 0.000001 if cfg.crypto_mode else 0.5
 
-            if not state.tape_mode and new_bar_flag == 1:
+            # BUG FIX 1: Flag=1 gilt jetzt fuer BEIDE Modi (Candle UND Tape).
+            # Vorher: "if not state.tape_mode and new_bar_flag == 1"
+            # Problem: Im Tape-Mode wurde Flag=1 ignoriert. Der eps_reset-
+            # Fallback funktioniert nur wenn der neue Bar-Wert kleiner ist als
+            # der alte. Mit Queue-Drain wird das "Reset-auf-0"-Paket jedoch
+            # uebersprungen - Python sieht direkt den schon akkumulierten
+            # neuen Wert (z.B. 600) der groesser ist als der alte (z.B. 20).
+            # eps_reset greift nicht -> diff wird falsch berechnet.
+            # Flag=1 loest das zuverlaessig fuer beide Modi.
+            if new_bar_flag == 1:
                 diff_bid = max(0.0, raw_bid)
                 diff_ask = max(0.0, raw_ask)
             else:
@@ -153,13 +162,11 @@ def smooth_volumes(cfg: AppConfig, state: AppState,
     state.current_bid_vol = target_bid
     state.current_ask_vol = target_ask
 
-    # Single-Mode Peak-Tracking mit langsamem Decay
     fps = max(getattr(cfg, 'fps', 60), 1)
     decay = 0.97 ** (1.0 / fps)
 
-    # Separate Bid/Ask Multiplier
-    now_dt       = datetime.now()
-    factor       = max(int(getattr(cfg, "mult_baseline_factor", 6)), 1)
+    now_dt        = datetime.now()
+    factor        = max(int(getattr(cfg, "mult_baseline_factor", 6)), 1)
     baseline_secs = max(cfg.time_window_seconds * factor, 30)
 
     def _update_mult(history, cur_vol):

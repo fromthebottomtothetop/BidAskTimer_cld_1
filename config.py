@@ -71,20 +71,16 @@ def load_config(config_file: str, cfg: AppConfig, state: AppState) -> None:
     cfg.crypto_mode           = bool(c.get("crypto_mode",          cfg.crypto_mode))
     cfg.show_controls         = bool(c.get("show_controls",        cfg.show_controls))
 
-    # Einheitlicher Scale-Modus (0=Relative, 1=Absolute, 2=Single, 3=Fixed)
-    # Rueckwaertskompatibel: alte absolute_scale/single_mode Felder migrieren
     if "scale_mode" in c:
         cfg.scale_mode = int(c["scale_mode"])
         if cfg.scale_mode not in (SCALE_RELATIVE, SCALE_ABSOLUTE, SCALE_FIXED):
             cfg.scale_mode = SCALE_RELATIVE
     else:
-        # Migration aus alter Config
         if c.get("absolute_scale", False):
             cfg.scale_mode = SCALE_ABSOLUTE
         else:
             cfg.scale_mode = SCALE_RELATIVE
 
-    # Fixed Scale Maximum (Kontrakte). Default 500 fuer NQ RTH.
     cfg.fixed_scale_max = float(c.get("fixed_scale_max", 500.0))
     if cfg.fixed_scale_max < 1:
         cfg.fixed_scale_max = 500.0
