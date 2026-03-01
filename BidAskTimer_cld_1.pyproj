@@ -24,7 +24,7 @@
     <Compile Include="config.py" />
     <Compile Include="data_processing.py" />
     <Compile Include="main.py" />
-    <Compile Include="model.txt" />
+    <Compile Include="model.py" />
     <Compile Include="win32_window.py" />
     <Compile Include="ui_draw.py" />
     <Compile Include="net_output.py" />
