@@ -26,15 +26,14 @@ def clamp_window_to_screen(cfg: AppConfig) -> None:
     """
     try:
         user32 = ctypes.windll.user32
-        # Virtual screen bounds (all monitors combined)
-        virt_x      = user32.GetSystemMetrics(76)   # SM_XVIRTUALSCREEN
-        virt_y      = user32.GetSystemMetrics(77)   # SM_YVIRTUALSCREEN
-        virt_w      = user32.GetSystemMetrics(78)   # SM_CXVIRTUALSCREEN
-        virt_h      = user32.GetSystemMetrics(79)   # SM_CYVIRTUALSCREEN
+        virt_x      = user32.GetSystemMetrics(76)
+        virt_y      = user32.GetSystemMetrics(77)
+        virt_w      = user32.GetSystemMetrics(78)
+        virt_h      = user32.GetSystemMetrics(79)
         virt_right  = virt_x + virt_w
         virt_bottom = virt_y + virt_h
 
-        margin = 50  # at least 50px must be visible
+        margin = 50
 
         win_right  = cfg.window_x + cfg.window_w
         win_bottom = cfg.window_y + cfg.window_h
@@ -48,8 +47,7 @@ def clamp_window_to_screen(cfg: AppConfig) -> None:
 
         if off_screen:
             print(f"[WARN] Window position ({cfg.window_x}, {cfg.window_y}) is off-screen - "
-                  f"resetting to (100, 100). "
-                  f"Virtual screen: ({virt_x},{virt_y}) {virt_w}x{virt_h}")
+                  f"resetting to (100, 100).")
             cfg.window_x = 100
             cfg.window_y = 100
 
@@ -60,26 +58,20 @@ def clamp_window_to_screen(cfg: AppConfig) -> None:
 
 
 def main():
-    # Win32 init
     set_dpi_awareness()
     init_win32_prototypes()
 
     cfg = AppConfig()
     state = AppState()
 
-    # Config path
     app_folder = get_app_folder("BidAskTimer_cld_1")
     config_file = get_config_file(app_folder, "config_BidAskTimer_cld_1.json")
     print(f"Config: {config_file}")
 
-    # Load config + apply theme
     load_config(config_file, cfg, state)
     apply_theme_to_config(cfg, cfg.theme_name)
-
-    # FIX: validate window position before creating the window
     clamp_window_to_screen(cfg)
 
-    # Pygame init
     pygame.init()
 
     hue_bar_surface = create_hue_bar(cfg.picker_bar_width, cfg.picker_box_size)
@@ -89,27 +81,33 @@ def main():
     pygame.display.set_caption("BidAskTimer_cld_1")
     clock = pygame.time.Clock()
 
-    font_big = pygame.font.SysFont("Consolas", cfg.font_size_val, bold=True)
-    font_std = pygame.font.SysFont("Segoe UI", 16)
-    font_small = pygame.font.SysFont("Segoe UI", 12)
-    font_micro = pygame.font.SysFont("Consolas", 12)
+    font_big        = pygame.font.SysFont("Consolas", cfg.font_size_val, bold=True)
+    font_std        = pygame.font.SysFont("Segoe UI", 16)
+    font_small      = pygame.font.SysFont("Segoe UI", 12)
+    font_micro      = pygame.font.SysFont("Consolas", 12)
     font_micro_bold = pygame.font.SysFont("Consolas", 22, bold=True)
 
-    # hwnd + window hack
     state.hwnd = pygame.display.get_wm_info().get("window", None)
     if state.hwnd:
         apply_window_hack(state.hwnd, cfg.window_x, cfg.window_y, cfg.window_w, cfg.window_h, cfg.rounded_corners)
         if cfg.is_always_on_top:
             toggle_always_on_top(state.hwnd, True)
 
-    # Servers
-    input_server = InputServer(cfg, state)
+    # FIX: apply_window_hack() loest Win32-Nachrichten aus (WM_STYLECHANGED,
+    # WM_WINDOWPOSCHANGED etc.) die sich in der pygame-Event-Queue ansammeln.
+    # Beim ersten pygame.event.get()-Aufruf crasht pygame mit:
+    #   KeyError: 0 → SystemError: built-in function get returned a result
+    #                              with an exception set
+    # Loesung: Queue vor dem Main-Loop leeren.
+    pygame.event.pump()
+    pygame.event.clear()
+
+    input_server  = InputServer(cfg, state)
     output_server = OutputServer(cfg, state)
     input_server.start()
     output_server.start()
 
-    # CPU monitor
-    current_process = psutil.Process()
+    current_process    = psutil.Process()
     cpu_check_interval = 1.0
 
     def on_exit():
@@ -134,25 +132,23 @@ def main():
 
     atexit.register(on_exit)
 
-    # Main loop
     layout_dirty = True
-    rects = calculate_layout(cfg, state)
-
-    screen_ref = {"screen": screen}
-    frame_count = 0
+    rects        = calculate_layout(cfg, state)
+    screen_ref   = {"screen": screen}
+    frame_count  = 0
 
     while state.running:
-        if layout_dirty:
+        if layout_dirty or getattr(state, "layout_dirty", False):
             rects = calculate_layout(cfg, state)
             layout_dirty = False
+            state.layout_dirty = False
 
-        # CPU
         if cfg.show_cpu_usage:
             now_t = time.time()
             if now_t - state.last_cpu_check > cpu_check_interval:
                 try:
-                    raw_pct = current_process.cpu_percent()
-                    count = psutil.cpu_count() or 1
+                    raw_pct  = current_process.cpu_percent()
+                    count    = psutil.cpu_count() or 1
                     real_pct = raw_pct / count
                     state.current_cpu_str = f"CPU: {real_pct:.1f}%"
                 except Exception:
@@ -161,7 +157,6 @@ def main():
         else:
             state.current_cpu_str = ""
 
-        # Data
         process_incoming_data(cfg, state)
         trim_history(cfg, state)
         target_bid, target_ask = compute_target(cfg, state)
@@ -170,21 +165,17 @@ def main():
         payload = build_payload(cfg, state)
         output_server.maybe_broadcast(payload)
 
-        # Hover / cursor
-        mouse_pos = pygame.mouse.get_pos()
+        mouse_pos    = pygame.mouse.get_pos()
         hover_states = compute_hover_states(cfg, state, rects, mouse_pos)
         update_cursor(cfg, state, rects, hover_states, mouse_pos)
 
-        # Events (may recreate screen)
         handle_events(cfg, state, rects, input_server, output_server, screen_ref)
         screen = screen_ref["screen"]
 
-        # If screen recreated, update hwnd + shape
         new_hwnd = pygame.display.get_wm_info().get("window", None)
         if new_hwnd and new_hwnd != state.hwnd:
             state.hwnd = new_hwnd
 
-        # If user requested save, do it with current window pos
         if state.save_requested:
             state.save_requested = False
             try:
@@ -199,7 +190,6 @@ def main():
                 pass
             layout_dirty = True
 
-        # Draw
         render_all(
             screen, rects, hover_states, cfg, state,
             font_big, font_std, font_small, font_micro,
@@ -215,7 +205,6 @@ def main():
 
         clock.tick(cfg.fps)
 
-    # Shutdown
     input_server.stop()
     output_server.stop()
     pygame.quit()

@@ -111,7 +111,12 @@ class InputServer:
                 except OSError:
                     break
         except Exception as e:
+            # FIX: Keine Fehler-Nachricht in die Data-Queue schreiben.
+            # Das wuerde data_processing mit ungueltigem Format belasten.
+            # Der Fehler wird nur geloggt - das Fenster startet trotzdem.
             print(f"[INPUT] Server Bind Error ({self._cfg.host}:{self._cfg.port_in}): {e}")
-            self._state.data_queue.put("Error Bind;;;;;0;0;0")
+            print(f"[INPUT] HINWEIS: Port {self._cfg.port_in} ist blockiert.")
+            print(f"[INPUT] Loesung: Task-Manager → alle python.exe beenden, oder Port in")
+            print(f"[INPUT]          Connection Settings aendern (Menu → Connection Settings)")
         finally:
             self.stop()

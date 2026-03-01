@@ -132,13 +132,10 @@ def draw_text_input(screen, rect, text, font_small, font_std, cfg: AppConfig,
     screen.set_clip(old_clip)
 
 
-# ------------------------------------------------------------------
-# Scale-Modus Metadaten
-# ------------------------------------------------------------------
 _SCALE_LABELS = {
-    SCALE_RELATIVE: ("REL",  (120, 120, 60),  "Scale: RELATIVE  (groesster=100%)"),
-    SCALE_ABSOLUTE: ("ABS",  (40,  100, 160), "Scale: ABSOLUTE  (Bid+Ask=100%)"),
-    SCALE_FIXED:    ("FIX",  (60,  140, 80),  "Scale: FIXED     (festes Maximum)"),
+    SCALE_RELATIVE: ("REL",  (120, 120, 60),  " Scale: RELATIVE  (100%)"),
+    SCALE_ABSOLUTE: ("ABS",  (40,  100, 160), " Scale: ABSOLUTE  (50%)"),
+    SCALE_FIXED:    ("FIX",  (60,  140, 80),  " Scale: FIXED     (value)"),
 }
 
 
@@ -150,28 +147,21 @@ def _multiplier_color(mult: float) -> tuple:
     return (220, 60, 60)
 
 
-# ------------------------------------------------------------------
-# Balkenhoehen berechnen
-# ------------------------------------------------------------------
 def _compute_bar_heights(cfg: AppConfig, state: AppState, chart_height: int) -> tuple[int, int]:
-    scale_mode  = getattr(cfg, "scale_mode",      SCALE_RELATIVE)
-    fixed_max   = max(getattr(cfg, "fixed_scale_max", 500.0), 1.0)
+    scale_mode = getattr(cfg, "scale_mode",      SCALE_RELATIVE)
+    fixed_max  = max(getattr(cfg, "fixed_scale_max", 500.0), 1.0)
 
     bid = state.current_bid_vol
     ask = state.current_ask_vol
 
     if scale_mode == SCALE_FIXED:
-        # Beide Balken gegen dasselbe feste Maximum.
-        # Kann 100% uebersteigen wenn Werte > fixed_max - wird geclampt.
         h_bid = int(bid / fixed_max * chart_height)
         h_ask = int(ask / fixed_max * chart_height)
-
     elif scale_mode == SCALE_ABSOLUTE:
         scale_ref = max(bid + ask, 10)
         pxv   = chart_height / scale_ref
         h_bid = int(bid * pxv)
         h_ask = int(ask * pxv)
-
     else:  # SCALE_RELATIVE
         scale_ref = max(bid, ask, 10)
         pxv   = chart_height / scale_ref
@@ -192,9 +182,6 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
     chart_top_y  = 60
     chart_height = chart_base_y - chart_top_y
 
-    # ------------------------------------------------------------------
-    # Grid
-    # ------------------------------------------------------------------
     grid_margin = 26
     scale_mode  = getattr(cfg, "scale_mode", SCALE_RELATIVE)
     fixed_max   = getattr(cfg, "fixed_scale_max", 500.0)
@@ -203,18 +190,15 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
         y_pos = chart_base_y - int(chart_height * p)
         pygame.draw.line(screen, cfg.color_grid,
                          (grid_margin, y_pos), (cfg.window_w - grid_margin, y_pos), 1)
-
-        # Beschriftung: sinnvoll pro Modus
         if scale_mode == SCALE_FIXED:
             lbl_txt = f"{int(fixed_max * p)}"
         else:
             lbl_txt = f"{int(p * 100)}%"
-
         lbl = font_small.render(lbl_txt, True, cfg.color_grid)
         screen.blit(lbl, (grid_margin - 25, y_pos - 8))
 
     # ------------------------------------------------------------------
-    # Status-Zeile oben links
+    # Status-Zeile oben links: CPU + Ampel
     # ------------------------------------------------------------------
     x_cursor = 5
     y_top    = 5
@@ -231,12 +215,7 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
         status_surf = font_micro.render(status_txt, True, (120, 120, 120))
         screen.blit(status_surf, (x_cursor, y_top))
 
-    # ------------------------------------------------------------------
-    # Oben rechts: Scale-Modus Label
-    # ------------------------------------------------------------------
-    scale_short, scale_col, _ = _SCALE_LABELS.get(scale_mode, _SCALE_LABELS[SCALE_RELATIVE])
-    mode_surf = font_micro.render(scale_short, True, scale_col)
-    screen.blit(mode_surf, (cfg.window_w - 42 - mode_surf.get_width(), y_top))
+    # Scale-Modus Label (FIX/REL/ABS) oben rechts wurde entfernt.
 
     # ------------------------------------------------------------------
     # Balken
@@ -260,7 +239,6 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
     pygame.draw.rect(screen, cfg.color_ask, r_ask,
                      border_top_left_radius=5, border_top_right_radius=5)
 
-    # Im FIXED-Modus: rote Linie zeigen wenn Wert das Maximum ueberschreitet
     if scale_mode == SCALE_FIXED:
         if state.current_bid_vol >= fixed_max:
             pygame.draw.line(screen, (220, 60, 60),
@@ -269,7 +247,6 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
             pygame.draw.line(screen, (220, 60, 60),
                              (r_ask.left, chart_top_y), (r_ask.right, chart_top_y), 2)
 
-    # Multiplier im Balken (oben zentriert, nur wenn >= Schwellwert)
     _thr      = getattr(cfg, "mult_threshold", 1.5)
     _bid_mult = getattr(state, "bid_multiplier", 1.0)
     _ask_mult = getattr(state, "ask_multiplier", 1.0)
@@ -280,7 +257,6 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
         ms = font_micro_bold.render(f"{_ask_mult:.1f}x", True, cfg.color_text)
         screen.blit(ms, (r_ask.centerx - ms.get_width() // 2, r_ask.y + 4))
 
-    # Volumen-Labels
     str_bid = format_number(cfg, state.current_bid_vol)
     if str_bid != state.cache_bid_val:
         state.cache_bid_val  = str_bid
@@ -305,13 +281,11 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
     lbl_ask = font_std.render("ASK", True, cfg.color_ask)
     screen.blit(lbl_ask, (r_ask.centerx - lbl_ask.get_width() // 2, cfg.window_h - 80))
 
-    # Header
     if cfg.show_header:
         h_surf = font_std.render(
             f"BidAskTimer_cld_1 - {state.latest_time_str}", True, cfg.color_header)
         screen.blit(h_surf, (cfg.window_w // 2 - h_surf.get_width() // 2, 10))
 
-    # Controls / Overlay
     bottom_y = cfg.window_h - 50
     if cfg.show_controls:
         draw_button(screen, rects["minus"], "-", font_std, cfg, hover_states.get("minus", False))
@@ -344,13 +318,12 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
             draw_button(screen, rects["overlay"], "START", font_std, cfg,
                         hover_states.get("overlay", False), override_color=(40, 140, 40))
 
-    # FIXED mode: Fixed-Max Controls rechts
     if getattr(cfg, "scale_mode", 0) == SCALE_FIXED and cfg.show_controls:
         draw_button(screen, rects["fix_minus"], "-", font_std, cfg,
                     hover_states.get("fix_minus", False))
         draw_button(screen, rects["fix_plus"],  "+", font_std, cfg,
                     hover_states.get("fix_plus",  False))
-        fix_val = int(getattr(cfg, "fixed_scale_max", 500))
+        fix_val  = int(getattr(cfg, "fixed_scale_max", 500))
         fix_surf = font_std.render(str(fix_val), True, cfg.color_text)
         fd = rects["fix_display"]
         screen.blit(fix_surf, (fd.centerx - fix_surf.get_width() // 2,
@@ -359,7 +332,6 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
     draw_resize_grip(screen, cfg.window_w, cfg.window_h, cfg)
     draw_menu_dots(screen, rects["menu"], cfg, hover_states.get("menu", False))
 
-    # Menu drop
     if state.show_menu and not (state.show_settings_modal or
                                 state.show_color_modal or
                                 state.show_advanced_modal):
@@ -375,7 +347,6 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
             t = font_small.render(item_text, True, cfg.color_text)
             screen.blit(t, (item_rect.x + 10, item_rect.centery - t.get_height() // 2))
 
-    # Dark overlay
     if state.show_settings_modal or state.show_color_modal or state.show_advanced_modal:
         s = pygame.Surface((cfg.window_w, cfg.window_h))
         s.set_alpha(150)
@@ -414,23 +385,20 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
         draw_button(screen, rects["btn_adv_status"], "Ampel + Stale", font_std, cfg, hover_states.get("adv_status"), gc(state.temp_adv_show_status))
         draw_button(screen, rects["btn_adv_crypto"], "Crypto Mode",   font_std, cfg, hover_states.get("adv_crypto"), gc(state.temp_adv_crypto))
 
-        # Scale cycling button: zeigt aktuellen Modus
         cur_mode  = getattr(state, "temp_adv_scale_mode", SCALE_RELATIVE)
         _, cur_col, cur_lbl = _SCALE_LABELS[cur_mode]
         draw_button(screen, rects["btn_adv_scale"], cur_lbl, font_std, cfg,
                     hover_states.get("adv_scale"), cur_col)
 
-        # Fixed Max input - grau ausgegraut wenn Modus nicht FIXED
         fmax_active = (state.active_adv_input_idx == 0)
         fmax_dim    = (cur_mode != SCALE_FIXED)
-        fmax_label  = "Fixed Max (Kontrakte):" if not fmax_dim else "Fixed Max (nur im FIXED-Modus):"
+        fmax_label  = "Fixed Max (Kontrakte):" if not fmax_dim else "Fixed Scale Value:"
         draw_text_input(screen, rects["inp_fixed_max"],
                         state.input_fixed_max_str if not fmax_dim else f"({state.input_fixed_max_str})",
                         font_small, font_std, cfg,
                         active=fmax_active and not fmax_dim,
                         label=fmax_label)
         if fmax_dim:
-            # Abdunkeln
             dim = pygame.Surface((rects["inp_fixed_max"].width, rects["inp_fixed_max"].height))
             dim.set_alpha(120)
             dim.fill((0, 0, 0))
@@ -438,8 +406,8 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
 
         draw_text_input(screen, rects["inp_buff"],      state.input_buffer_str,    font_small, font_std, cfg, state.active_adv_input_idx == 1, "Buffer Size:")
         draw_text_input(screen, rects["inp_width"],     state.input_width_str,     font_small, font_std, cfg, state.active_adv_input_idx == 2, "Bar Width (%):")
-        draw_text_input(screen, rects["inp_mult_base"], state.input_mult_base_str, font_small, font_std, cfg, state.active_adv_input_idx == 3, "Mult Baseline (xFenster):")
-        draw_text_input(screen, rects["inp_mult_thr"],  state.input_mult_thr_str,  font_small, font_std, cfg, state.active_adv_input_idx == 4, "Mult Schwelle:")
+        draw_text_input(screen, rects["inp_mult_base"], state.input_mult_base_str, font_small, font_std, cfg, state.active_adv_input_idx == 3, "Mult Flow Time:")
+        draw_text_input(screen, rects["inp_mult_thr"],  state.input_mult_thr_str,  font_small, font_std, cfg, state.active_adv_input_idx == 4, "Trigger Value:")
 
         draw_button(screen, rects["btn_buf_arrow"], "?",      font_std, cfg, hover_states.get("buf_arrow"),  (70, 70, 70))
         draw_button(screen, rects["adv_save"],      "Save",   font_std, cfg, hover_states.get("adv_save"),   (40, 100, 40))

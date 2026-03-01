@@ -10,8 +10,95 @@ from win32_window import (
     get_window_rect, get_cursor_pos, set_window_pos, set_window_shape, toggle_always_on_top
 )
 
-# Reihenfolge beim Durchschalten: REL -> ABS -> SINGLE -> FIXED -> REL
 _SCALE_CYCLE = [SCALE_RELATIVE, SCALE_ABSOLUTE, SCALE_FIXED]
+
+# Modal minimum sizes (width, height) mit etwas Padding
+_MODAL_MIN = {
+    "settings": (220, 320),
+    "color":    (270, 470),
+    "advanced": (300, 560),
+}
+
+
+def _modal_open(cfg: AppConfig, state: AppState, screen_ref: dict,
+                modal_key: str) -> None:
+    """Fenster temporaer auf Mindestgroesse aufziehen, Position zentriert halten."""
+    min_w, min_h = _MODAL_MIN[modal_key]
+    if cfg.window_w >= min_w and cfg.window_h >= min_h:
+        return  # Fenster ist schon gross genug
+    # Originale Groesse und Position merken (nur beim ersten Modal-Open)
+    if not getattr(state, "_modal_saved_w", None):
+        state._modal_saved_w = cfg.window_w
+        state._modal_saved_h = cfg.window_h
+        state._modal_saved_x = cfg.window_x
+        state._modal_saved_y = cfg.window_y
+    new_w = max(cfg.window_w, min_w)
+    new_h = max(cfg.window_h, min_h)
+    # Position anpassen: Vergroesserung symmetrisch verteilen, aber auf
+    # Bildschirmgrenzen clampen damit das Fenster nicht ausserhalb landet.
+    delta_w = new_w - cfg.window_w
+    delta_h = new_h - cfg.window_h
+    new_x = cfg.window_x - delta_w // 2
+    new_y = cfg.window_y - delta_h // 2
+    # Bildschirmgrenzen ermitteln (multi-monitor-faehig)
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        virt_x = user32.GetSystemMetrics(76)
+        virt_y = user32.GetSystemMetrics(77)
+        virt_w = user32.GetSystemMetrics(78)
+        virt_h = user32.GetSystemMetrics(79)
+    except Exception:
+        virt_x, virt_y, virt_w, virt_h = 0, 0, 1920, 1080
+    new_x = max(virt_x, min(new_x, virt_x + virt_w - new_w))
+    new_y = max(virt_y, min(new_y, virt_y + virt_h - new_h))
+    cfg.window_w = new_w
+    cfg.window_h = new_h
+    cfg.window_x = new_x
+    cfg.window_y = new_y
+    state.layout_dirty = True  # Layout muss mit neuer Fenstergroesse neu berechnet werden
+    screen_ref["screen"] = pygame.display.set_mode(
+        (new_w, new_h), pygame.NOFRAME | pygame.DOUBLEBUF)
+    # WICHTIG: set_mode erzeugt auf Windows eine neue hwnd.
+    # state.hwnd muss sofort aktualisiert werden, bevor set_window_pos
+    # aufgerufen wird – sonst landet die Position auf dem alten Fenster.
+    new_hwnd = pygame.display.get_wm_info().get("window", None)
+    if new_hwnd:
+        state.hwnd = new_hwnd
+    if state.hwnd:
+        set_window_shape(state.hwnd, new_w, new_h, cfg.rounded_corners)
+        set_window_pos(state.hwnd, new_x, new_y)
+
+
+def _modal_close(cfg: AppConfig, state: AppState, screen_ref: dict) -> None:
+    """Fenster auf gespeicherte Originalgroesse und -position zuruecksetzen."""
+    saved_w = getattr(state, "_modal_saved_w", None)
+    saved_h = getattr(state, "_modal_saved_h", None)
+    saved_x = getattr(state, "_modal_saved_x", None)
+    saved_y = getattr(state, "_modal_saved_y", None)
+    if saved_w is None:
+        return
+    state._modal_saved_w = None
+    state._modal_saved_h = None
+    state._modal_saved_x = None
+    state._modal_saved_y = None
+    cfg.window_w = saved_w
+    cfg.window_h = saved_h
+    if saved_x is not None:
+        cfg.window_x = saved_x
+        cfg.window_y = saved_y
+    state.layout_dirty = True  # Layout neu berechnen nach Fenster-Restore
+    screen_ref["screen"] = pygame.display.set_mode(
+        (saved_w, saved_h), pygame.NOFRAME | pygame.DOUBLEBUF)
+    new_hwnd = pygame.display.get_wm_info().get("window", None)
+    if new_hwnd:
+        state.hwnd = new_hwnd
+    if state.hwnd:
+        set_window_shape(state.hwnd, saved_w, saved_h, cfg.rounded_corners)
+        if saved_x is not None:
+            set_window_pos(state.hwnd, saved_x, saved_y)
+        if cfg.is_always_on_top:
+            toggle_always_on_top(state.hwnd, True)
 
 
 def compute_hover_states(cfg: AppConfig, state: AppState, rects: dict, mouse_pos: tuple[int, int]) -> dict:
@@ -129,7 +216,6 @@ def _apply_advanced(cfg: AppConfig, state: AppState) -> None:
     except Exception:
         pass
 
-    # Fixed Scale Max: Ganzzahl >= 1, kein Dezimalpunkt noetig
     try:
         val = float(state.input_fixed_max_str)
         if val >= 1:
@@ -163,7 +249,19 @@ def _apply_advanced(cfg: AppConfig, state: AppState) -> None:
 
 def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                   input_server, output_server, screen_ref: dict) -> None:
-    for event in pygame.event.get():
+
+    # FIX: pygame.event.get() kann auf Windows mit einem SystemError crashen
+    # wenn Win32-Nachrichten in der Queue liegen die pygame nicht kennt
+    # (z.B. nach apply_window_hack: WM_STYLECHANGED, WM_NCACTIVATE etc.).
+    # Ursache: KeyError: 0 wird in der C-Ebene gesetzt und nicht bereinigt.
+    # Loesung: SystemError abfangen, Queue leeren, Frame ueberspringen.
+    try:
+        events = list(pygame.event.get())
+    except SystemError:
+        pygame.event.clear()
+        return
+
+    for event in events:
         if event.type == pygame.QUIT:
             state.request_save()
             state.running = False
@@ -220,13 +318,14 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
 
             elif state.show_advanced_modal:
                 if event.key == pygame.K_ESCAPE:
+                    _modal_close(cfg, state, screen_ref)
                     state.show_advanced_modal = False
                     state.show_buffer_dropdown = False
                 elif event.key == pygame.K_TAB:
-                    # 3 Textfelder: fixed_max(0) buff(1) width(2)
                     state.active_adv_input_idx = (state.active_adv_input_idx + 1) % 5
                 elif event.key == pygame.K_RETURN:
                     _apply_advanced(cfg, state)
+                    _modal_close(cfg, state, screen_ref)
                     if state.hwnd:
                         toggle_always_on_top(state.hwnd, cfg.is_always_on_top)
                         set_window_shape(state.hwnd, cfg.window_w, cfg.window_h, cfg.rounded_corners)
@@ -263,6 +362,7 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
 
             elif state.show_color_modal:
                 if event.key == pygame.K_ESCAPE:
+                    _modal_close(cfg, state, screen_ref)
                     state.show_color_modal = False
 
         # ------------------------------------------------------------------
@@ -290,8 +390,10 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                     _apply_settings_modal(cfg, state)
                     input_server.restart()
                     output_server.restart()
+                    _modal_close(cfg, state, screen_ref)
                     state.show_settings_modal = False
                 elif rects["btn_cancel"].collidepoint(event.pos):
+                    _modal_close(cfg, state, screen_ref)
                     state.show_settings_modal = False
 
             elif state.show_advanced_modal:
@@ -331,18 +433,19 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                         state.temp_adv_crypto = not state.temp_adv_crypto
 
                     elif rects["btn_adv_scale"].collidepoint(event.pos):
-                        # Cycling: REL -> ABS -> SINGLE -> FIXED -> REL
                         cur = getattr(state, "temp_adv_scale_mode", SCALE_RELATIVE)
                         idx = _SCALE_CYCLE.index(cur) if cur in _SCALE_CYCLE else 0
                         state.temp_adv_scale_mode = _SCALE_CYCLE[(idx + 1) % len(_SCALE_CYCLE)]
 
                     elif rects["adv_save"].collidepoint(event.pos):
                         _apply_advanced(cfg, state)
+                        _modal_close(cfg, state, screen_ref)
                         if state.hwnd:
                             toggle_always_on_top(state.hwnd, cfg.is_always_on_top)
                             set_window_shape(state.hwnd, cfg.window_w, cfg.window_h, cfg.rounded_corners)
                         state.show_advanced_modal = False
                     elif rects["adv_cancel"].collidepoint(event.pos):
+                        _modal_close(cfg, state, screen_ref)
                         state.show_advanced_modal = False
 
             elif state.show_color_modal:
@@ -386,8 +489,10 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                     cfg.color_text = state.temp_color_text
                     cfg.color_btn  = state.temp_color_btn
                     state.request_save()
+                    _modal_close(cfg, state, screen_ref)
                     state.show_color_modal = False
                 elif rects["c_cancel"].collidepoint(event.pos):
+                    _modal_close(cfg, state, screen_ref)
                     state.show_color_modal = False
 
             elif state.show_menu:
@@ -405,6 +510,7 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                         state.input_port_str    = str(cfg.port_in)
                         state.input_outport_str = str(cfg.port_out)
                         state.active_input_idx  = 0
+                        _modal_open(cfg, state, screen_ref, "settings")
                         state.show_menu = False
                     elif item_idx == 2:
                         state.show_color_modal   = True
@@ -416,6 +522,7 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                         state.temp_color_btn     = cfg.color_btn
                         state.color_edit_mode    = "BID"
                         set_picker_from_color(state, state.temp_color_bid)
+                        _modal_open(cfg, state, screen_ref, "color")
                         state.show_menu = False
                     elif item_idx == 3:
                         state.show_advanced_modal    = True
@@ -425,7 +532,6 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                         state.input_mult_base_str    = str(int(getattr(cfg, "mult_baseline_factor", 6)))
                         state.input_mult_thr_str     = str(getattr(cfg, "mult_threshold", 1.5))
                         state.active_adv_input_idx   = 0
-
                         state.temp_adv_always_on_top = cfg.is_always_on_top
                         state.temp_adv_show_header   = cfg.show_header
                         state.temp_adv_show_cpu      = cfg.show_cpu_usage
@@ -433,7 +539,7 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                         state.temp_adv_show_status   = cfg.show_status_indicator
                         state.temp_adv_crypto        = cfg.crypto_mode
                         state.temp_adv_scale_mode    = getattr(cfg, "scale_mode", SCALE_RELATIVE)
-
+                        _modal_open(cfg, state, screen_ref, "advanced")
                         state.show_menu = False
                     elif item_idx == 4:
                         input_server.restart()

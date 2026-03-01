@@ -97,15 +97,19 @@ def process_incoming_data(cfg: AppConfig, state: AppState) -> None:
 
             eps_reset = 0.000001 if cfg.crypto_mode else 0.5
 
-            # BUG FIX 1: Flag=1 gilt jetzt fuer BEIDE Modi (Candle UND Tape).
-            # Vorher: "if not state.tape_mode and new_bar_flag == 1"
-            # Problem: Im Tape-Mode wurde Flag=1 ignoriert. Der eps_reset-
-            # Fallback funktioniert nur wenn der neue Bar-Wert kleiner ist als
-            # der alte. Mit Queue-Drain wird das "Reset-auf-0"-Paket jedoch
-            # uebersprungen - Python sieht direkt den schon akkumulierten
-            # neuen Wert (z.B. 600) der groesser ist als der alte (z.B. 20).
-            # eps_reset greift nicht -> diff wird falsch berechnet.
-            # Flag=1 loest das zuverlaessig fuer beide Modi.
+            # FIX: Flag=1 gilt fuer BEIDE Modi (Candle UND Tape).
+            #
+            # Vorher (Bug): "if not state.tape_mode and new_bar_flag == 1:"
+            # → Im Tape-Mode wurde Flag=1 komplett ignoriert.
+            #
+            # Problem mit Queue-Drain: C# verwirft Zwischenzustaende und
+            # sendet direkt den schon akkumulierten neuen Bar-Wert.
+            # Python sieht z.B. tapeBid=600 nach altem Wert von 20.
+            # Der eps_reset-Fallback (raw < last - 0.5) greift nicht,
+            # weil 600 > 20. Python rechnet diff=580 statt 600. FALSCH.
+            #
+            # Fix: Flag=1 (neuer Bar) wird fuer beide Modi ausgewertet.
+            # eps_reset bleibt als Fallback fuer verlorene Flags.
             if new_bar_flag == 1:
                 diff_bid = max(0.0, raw_bid)
                 diff_ask = max(0.0, raw_ask)
