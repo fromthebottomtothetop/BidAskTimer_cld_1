@@ -56,7 +56,7 @@ class AppConfig:
     picker_box_size: int = 150
     picker_bar_width: int = 30
 
-    # Theme + colors (werden durch Theme gesetzt + optional überschrieben)
+    # Theme + colors (werden durch Theme gesetzt + optional ueberschrieben)
     theme_name: str = "atas dark"
 
     color_bid: tuple = (214, 39, 40)
