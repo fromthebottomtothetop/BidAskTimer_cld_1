@@ -226,7 +226,7 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
 
     if cfg.show_status_indicator:
         dot_col, status_txt = get_quality_status(cfg, state, input_client_count)
-        pygame.draw.circle(screen, dot_col, (x_cursor + 5, y_top + 7), 3)
+        pygame.draw.circle(screen, dot_col, (x_cursor + 5, y_top + 5), 3)
         x_cursor += 14
         status_surf = font_micro.render(status_txt, True, (120, 120, 120))
         screen.blit(status_surf, (x_cursor, y_top))
