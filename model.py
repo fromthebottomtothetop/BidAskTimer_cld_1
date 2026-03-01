@@ -26,7 +26,6 @@ class AppConfig:
     # Behavior
     fps: int = 60
     buffer_size: int = 4096
-    lerp_factor: float = 0.8
     bar_width_percent: int = 60
     time_window_seconds: int = 30
 
@@ -37,6 +36,14 @@ class AppConfig:
     show_controls: bool = True
     show_status_indicator: bool = True
     crypto_mode: bool = False
+
+    # Scale mode: 0=RELATIVE, 1=ABSOLUTE, 2=FIXED
+    scale_mode: int = 0
+    fixed_scale_max: float = 500.0
+
+    # Multiplier settings
+    mult_baseline_factor: int = 6
+    mult_threshold: float = 1.5
 
     # Status thresholds
     green_rx_sec: float = 0.25
@@ -87,9 +94,15 @@ class AppState:
     last_raw_bid: float = 0.0
     last_raw_ask: float = 0.0
 
-    # Displayed volumes (smoothed)
+    # Displayed volumes (direct, kein lerp)
     current_bid_vol: float = 0.0
     current_ask_vol: float = 0.0
+
+    # Multiplier
+    bid_multiplier: float = 1.0
+    ask_multiplier: float = 1.0
+    bid_baseline_history: deque = field(default_factory=deque)
+    ask_baseline_history: deque = field(default_factory=deque)
 
     # Latest tick fields
     latest_time_str: str = "waiting..."
@@ -138,9 +151,11 @@ class AppState:
     active_input_idx: int = 0
 
     show_advanced_modal: bool = False
-    input_lerp_str: str = ""
+    input_fixed_max_str: str = "500"
     input_buffer_str: str = ""
     input_width_str: str = ""
+    input_mult_base_str: str = "6"
+    input_mult_thr_str: str = "1.5"
     active_adv_input_idx: int = 0
     show_buffer_dropdown: bool = False
 
@@ -150,6 +165,7 @@ class AppState:
     temp_adv_rounded: bool = False
     temp_adv_show_status: bool = False
     temp_adv_crypto: bool = False
+    temp_adv_scale_mode: int = 0  # 0=RELATIVE, 1=ABSOLUTE, 2=FIXED
 
     editing_time_window: bool = False
     input_time_str: str = ""
@@ -189,7 +205,7 @@ class AppState:
     cache_bid_surf: object | None = None
     cache_ask_surf: object | None = None
 
-    # Save request flag (damit wir zentral speichern)
+    # Save request flag
     save_requested: bool = False
 
     def request_save(self) -> None:
@@ -200,5 +216,3 @@ class AppState:
 
     def now_sec(self) -> float:
         return time.time()
-
-
