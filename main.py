@@ -93,7 +93,7 @@ def main():
     font_std = pygame.font.SysFont("Segoe UI", 16)
     font_small = pygame.font.SysFont("Segoe UI", 12)
     font_micro = pygame.font.SysFont("Consolas", 12)
-    font_micro_bold = pygame.font.SysFont("Consolas", 12, bold=True)
+    font_micro_bold = pygame.font.SysFont("Consolas", 22, bold=True)
 
     # hwnd + window hack
     state.hwnd = pygame.display.get_wm_info().get("window", None)
