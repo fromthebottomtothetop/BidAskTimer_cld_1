@@ -13,10 +13,14 @@ MODE_TAPE   = 1
 def _init_state_extras(state: AppState) -> None:
     if not hasattr(state, 'tape_mode'):
         state.tape_mode = False
-    if not hasattr(state, 'vol_baseline_history'):
-        state.vol_baseline_history = collections.deque()
-    if not hasattr(state, 'vol_multiplier'):
-        state.vol_multiplier = 1.0
+    if not hasattr(state, 'bid_baseline_history'):
+        state.bid_baseline_history = collections.deque()
+    if not hasattr(state, 'ask_baseline_history'):
+        state.ask_baseline_history = collections.deque()
+    if not hasattr(state, 'bid_multiplier'):
+        state.bid_multiplier = 1.0
+    if not hasattr(state, 'ask_multiplier'):
+        state.ask_multiplier = 1.0
     if not hasattr(state, 'input_fixed_max_str'):
         state.input_fixed_max_str = "500"
 
@@ -146,38 +150,30 @@ def smooth_volumes(cfg: AppConfig, state: AppState,
                    target_bid: float, target_ask: float) -> None:
     _init_state_extras(state)
 
-    if abs(target_bid - state.current_bid_vol) > 0.01:
-        state.current_bid_vol += (target_bid - state.current_bid_vol) * cfg.lerp_factor
-    else:
-        state.current_bid_vol = target_bid
-
-    if abs(target_ask - state.current_ask_vol) > 0.01:
-        state.current_ask_vol += (target_ask - state.current_ask_vol) * cfg.lerp_factor
-    else:
-        state.current_ask_vol = target_ask
+    state.current_bid_vol = target_bid
+    state.current_ask_vol = target_ask
 
     # Single-Mode Peak-Tracking mit langsamem Decay
     fps = max(getattr(cfg, 'fps', 60), 1)
     decay = 0.97 ** (1.0 / fps)
 
-    # KRITISCH 3: Vol-Multiplier (aktuell vs. rollender Durchschnitt)
+    # Separate Bid/Ask Multiplier
     now_dt       = datetime.now()
-    current_total = state.current_bid_vol + state.current_ask_vol
+    factor       = max(int(getattr(cfg, "mult_baseline_factor", 6)), 1)
+    baseline_secs = max(cfg.time_window_seconds * factor, 30)
 
-    if (not state.vol_baseline_history or
-            (now_dt - state.vol_baseline_history[-1][0]).total_seconds() > 0.5):
-        state.vol_baseline_history.append((now_dt, current_total))
+    def _update_mult(history, cur_vol):
+        if not history or (now_dt - history[-1][0]).total_seconds() > 0.5:
+            history.append((now_dt, cur_vol))
+        while history and (now_dt - history[0][0]).total_seconds() > baseline_secs:
+            history.popleft()
+        if len(history) >= 10:
+            avg = sum(v for _, v in history) / len(history)
+            return (cur_vol / avg) if avg > 0.1 else 1.0
+        return 1.0
 
-    baseline_secs = max(cfg.time_window_seconds * 6, 60)
-    while (state.vol_baseline_history and
-           (now_dt - state.vol_baseline_history[0][0]).total_seconds() > baseline_secs):
-        state.vol_baseline_history.popleft()
-
-    if len(state.vol_baseline_history) >= 10:
-        avg = sum(v for _, v in state.vol_baseline_history) / len(state.vol_baseline_history)
-        state.vol_multiplier = (current_total / avg) if avg > 0.1 else 1.0
-    else:
-        state.vol_multiplier = 1.0
+    state.bid_multiplier = _update_mult(state.bid_baseline_history, state.current_bid_vol)
+    state.ask_multiplier = _update_mult(state.ask_baseline_history, state.current_ask_vol)
 
 
 def build_payload(cfg: AppConfig, state: AppState) -> str:

@@ -93,6 +93,7 @@ def main():
     font_std = pygame.font.SysFont("Segoe UI", 16)
     font_small = pygame.font.SysFont("Segoe UI", 12)
     font_micro = pygame.font.SysFont("Consolas", 12)
+    font_micro_bold = pygame.font.SysFont("Consolas", 12, bold=True)
 
     # hwnd + window hack
     state.hwnd = pygame.display.get_wm_info().get("window", None)
@@ -202,6 +203,7 @@ def main():
         render_all(
             screen, rects, hover_states, cfg, state,
             font_big, font_std, font_small, font_micro,
+            font_micro_bold,
             hue_bar_surface, sat_val_overlay,
             input_server.client_count()
         )

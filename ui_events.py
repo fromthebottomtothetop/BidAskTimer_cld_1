@@ -72,9 +72,10 @@ def update_cursor(cfg: AppConfig, state: AppState, rects: dict, hover: dict, mou
                 hover.get("adv_scale")):
                 cursor = pygame.SYSTEM_CURSOR_HAND
             elif (rects["inp_fixed_max"].collidepoint(mouse_pos) or
-                  rects["inp_lerp"].collidepoint(mouse_pos) or
                   rects["inp_buff"].collidepoint(mouse_pos) or
-                  rects["inp_width"].collidepoint(mouse_pos)):
+                  rects["inp_width"].collidepoint(mouse_pos) or
+                  rects["inp_mult_base"].collidepoint(mouse_pos) or
+                  rects["inp_mult_thr"].collidepoint(mouse_pos)):
                 cursor = pygame.SYSTEM_CURSOR_IBEAM
 
     elif state.show_color_modal:
@@ -115,13 +116,6 @@ def _apply_settings_modal(cfg: AppConfig, state: AppState) -> None:
 
 def _apply_advanced(cfg: AppConfig, state: AppState) -> None:
     try:
-        val = float(state.input_lerp_str)
-        if 1.0 <= val <= 100.0:
-            cfg.lerp_factor = val / 100.0
-    except Exception:
-        pass
-
-    try:
         val = int(state.input_buffer_str)
         if val > 64:
             cfg.buffer_size = val
@@ -150,6 +144,19 @@ def _apply_advanced(cfg: AppConfig, state: AppState) -> None:
     cfg.show_status_indicator = state.temp_adv_show_status
     cfg.crypto_mode           = state.temp_adv_crypto
     cfg.scale_mode            = getattr(state, "temp_adv_scale_mode", SCALE_RELATIVE)
+
+    try:
+        val = int(state.input_mult_base_str)
+        if 1 <= val <= 20:
+            cfg.mult_baseline_factor = val
+    except Exception:
+        pass
+    try:
+        val = float(state.input_mult_thr_str.replace(",", "."))
+        if 1.0 <= val <= 10.0:
+            cfg.mult_threshold = val
+    except Exception:
+        pass
 
     state.request_save()
 
@@ -216,8 +223,8 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                     state.show_advanced_modal = False
                     state.show_buffer_dropdown = False
                 elif event.key == pygame.K_TAB:
-                    # 4 Textfelder: fixed_max(0) lerp(1) buff(2) width(3)
-                    state.active_adv_input_idx = (state.active_adv_input_idx + 1) % 4
+                    # 3 Textfelder: fixed_max(0) buff(1) width(2)
+                    state.active_adv_input_idx = (state.active_adv_input_idx + 1) % 5
                 elif event.key == pygame.K_RETURN:
                     _apply_advanced(cfg, state)
                     if state.hwnd:
@@ -229,11 +236,13 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                     if state.active_adv_input_idx == 0:
                         state.input_fixed_max_str = state.input_fixed_max_str[:-1]
                     elif state.active_adv_input_idx == 1:
-                        state.input_lerp_str = state.input_lerp_str[:-1]
-                    elif state.active_adv_input_idx == 2:
                         state.input_buffer_str = state.input_buffer_str[:-1]
-                    else:
+                    elif state.active_adv_input_idx == 2:
                         state.input_width_str = state.input_width_str[:-1]
+                    elif state.active_adv_input_idx == 3:
+                        state.input_mult_base_str = state.input_mult_base_str[:-1]
+                    else:
+                        state.input_mult_thr_str = state.input_mult_thr_str[:-1]
                 else:
                     ch = event.unicode
                     if state.active_adv_input_idx == 0:
@@ -241,13 +250,16 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                             state.input_fixed_max_str += ch
                     elif state.active_adv_input_idx == 1:
                         if ch.isdigit():
-                            state.input_lerp_str += ch
-                    elif state.active_adv_input_idx == 2:
-                        if ch.isdigit():
                             state.input_buffer_str += ch
-                    else:
+                    elif state.active_adv_input_idx == 2:
                         if ch.isdigit() and len(state.input_width_str) < 3:
                             state.input_width_str += ch
+                    elif state.active_adv_input_idx == 3:
+                        if ch.isdigit() and len(state.input_mult_base_str) < 2:
+                            state.input_mult_base_str += ch
+                    else:
+                        if ch in "0123456789." and len(state.input_mult_thr_str) < 4:
+                            state.input_mult_thr_str += ch
 
             elif state.show_color_modal:
                 if event.key == pygame.K_ESCAPE:
@@ -296,12 +308,14 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                         state.show_buffer_dropdown = True
                     elif rects["inp_fixed_max"].collidepoint(event.pos):
                         state.active_adv_input_idx = 0
-                    elif rects["inp_lerp"].collidepoint(event.pos):
-                        state.active_adv_input_idx = 1
                     elif rects["inp_buff"].collidepoint(event.pos):
-                        state.active_adv_input_idx = 2
+                        state.active_adv_input_idx = 1
                     elif rects["inp_width"].collidepoint(event.pos):
+                        state.active_adv_input_idx = 2
+                    elif rects["inp_mult_base"].collidepoint(event.pos):
                         state.active_adv_input_idx = 3
+                    elif rects["inp_mult_thr"].collidepoint(event.pos):
+                        state.active_adv_input_idx = 4
 
                     elif rects["btn_adv_top"].collidepoint(event.pos):
                         state.temp_adv_always_on_top = not state.temp_adv_always_on_top
@@ -405,11 +419,12 @@ def handle_events(cfg: AppConfig, state: AppState, rects: dict,
                         state.show_menu = False
                     elif item_idx == 3:
                         state.show_advanced_modal    = True
-                        state.input_lerp_str         = str(int(cfg.lerp_factor * 100))
                         state.input_buffer_str       = str(cfg.buffer_size)
                         state.input_width_str        = str(cfg.bar_width_percent)
                         state.input_fixed_max_str    = str(int(getattr(cfg, "fixed_scale_max", 500)))
-                        state.active_adv_input_idx   = 1  # lerp als default
+                        state.input_mult_base_str    = str(int(getattr(cfg, "mult_baseline_factor", 6)))
+                        state.input_mult_thr_str     = str(getattr(cfg, "mult_threshold", 1.5))
+                        state.active_adv_input_idx   = 0
 
                         state.temp_adv_always_on_top = cfg.is_always_on_top
                         state.temp_adv_show_header   = cfg.show_header

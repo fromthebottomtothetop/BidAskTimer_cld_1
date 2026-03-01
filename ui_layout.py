@@ -19,17 +19,17 @@ def calculate_layout(cfg: AppConfig, state: AppState) -> dict:
 
     if fixed_mode:
         t_cx = w // 4
-        r["minus"]        = pygame.Rect(t_cx - 50, bottom_y + 4, 30, 22)
-        r["plus"]         = pygame.Rect(t_cx + 20, bottom_y + 4, 30, 22)
-        r["time_display"] = pygame.Rect(t_cx - 20, bottom_y, 40, 30)
+        r["minus"]        = pygame.Rect(t_cx - 35, bottom_y + 7, 21, 15)
+        r["plus"]         = pygame.Rect(t_cx + 14, bottom_y + 7, 21, 15)
+        r["time_display"] = pygame.Rect(t_cx - 14, bottom_y + 4, 28, 21)
         f_cx = (w * 3) // 4
-        r["fix_minus"]   = pygame.Rect(f_cx - 50, bottom_y + 4, 30, 22)
-        r["fix_plus"]    = pygame.Rect(f_cx + 20, bottom_y + 4, 30, 22)
-        r["fix_display"] = pygame.Rect(f_cx - 28, bottom_y, 58, 30)
+        r["fix_minus"]   = pygame.Rect(f_cx - 35, bottom_y + 7, 21, 15)
+        r["fix_plus"]    = pygame.Rect(f_cx + 14, bottom_y + 7, 21, 15)
+        r["fix_display"] = pygame.Rect(f_cx - 20, bottom_y + 4, 41, 21)
     else:
-        r["minus"]        = pygame.Rect(center_x - 50, bottom_y + 4, 30, 22)
-        r["plus"]         = pygame.Rect(center_x + 20, bottom_y + 4, 30, 22)
-        r["time_display"] = pygame.Rect(center_x - 20, bottom_y, 40, 30)
+        r["minus"]        = pygame.Rect(center_x - 35, bottom_y + 7, 21, 15)
+        r["plus"]         = pygame.Rect(center_x + 14, bottom_y + 7, 21, 15)
+        r["time_display"] = pygame.Rect(center_x - 14, bottom_y + 4, 28, 21)
         r["fix_minus"]   = pygame.Rect(-100, -100, 30, 22)
         r["fix_plus"]    = pygame.Rect(-100, -100, 30, 22)
         r["fix_display"] = pygame.Rect(-100, -100, 58, 30)
@@ -54,7 +54,7 @@ def calculate_layout(cfg: AppConfig, state: AppState) -> dict:
                                    m_rect.bottom - 50, (modal_w - 50) // 2, 30)
 
     # Advanced modal
-    adv_w, adv_h = 260, 460
+    adv_w, adv_h = 260, 470
     adv_rect = pygame.Rect((w - adv_w) // 2, (h - adv_h) // 2, adv_w, adv_h)
     r["adv_modal"] = adv_rect
     btn_w    = 110
@@ -67,10 +67,11 @@ def calculate_layout(cfg: AppConfig, state: AppState) -> dict:
     r["btn_adv_crypto"] = pygame.Rect(adv_rect.right - 15 - btn_w, adv_rect.y + 125, btn_w, 30)
     r["btn_adv_scale"]  = pygame.Rect(adv_rect.x + 15,             adv_rect.y + 165, full_btn, 30)
     r["inp_fixed_max"]  = pygame.Rect(adv_rect.x + 20, adv_rect.y + 210, adv_w - 40, 30)
-    r["inp_lerp"]       = pygame.Rect(adv_rect.x + 20, adv_rect.y + 270, adv_w - 40, 30)
-    r["inp_buff"]       = pygame.Rect(adv_rect.x + 20, adv_rect.y + 330, adv_w - 40 - 35, 30)
+    r["inp_buff"]       = pygame.Rect(adv_rect.x + 20, adv_rect.y + 270, adv_w - 40 - 35, 30)
     r["btn_buf_arrow"]  = pygame.Rect(r["inp_buff"].right + 5, r["inp_buff"].y, 30, 30)
-    r["inp_width"]      = pygame.Rect(adv_rect.x + 20, adv_rect.y + 390, adv_w - 40, 30)
+    r["inp_width"]      = pygame.Rect(adv_rect.x + 20, adv_rect.y + 330, adv_w - 40, 30)
+    r["inp_mult_base"]  = pygame.Rect(adv_rect.x + 20, adv_rect.y + 390, (adv_w - 45) // 2, 30)
+    r["inp_mult_thr"]   = pygame.Rect(adv_rect.x + 20 + (adv_w - 45) // 2 + 5, adv_rect.y + 390, (adv_w - 45) // 2, 30)
     r["dd_container"]   = pygame.Rect(r["inp_buff"].x, r["inp_buff"].bottom + 1,
                                       r["inp_buff"].width + 35, 100)
     r["dd_opt_1"] = pygame.Rect(r["dd_container"].x, r["dd_container"].y,      r["dd_container"].width, 33)

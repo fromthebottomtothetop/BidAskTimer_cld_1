@@ -88,12 +88,13 @@ def load_config(config_file: str, cfg: AppConfig, state: AppState) -> None:
     cfg.fixed_scale_max = float(c.get("fixed_scale_max", 500.0))
     if cfg.fixed_scale_max < 1:
         cfg.fixed_scale_max = 500.0
+    cfg.mult_baseline_factor = int(c.get("mult_baseline_factor", 6))
+    cfg.mult_threshold       = float(c.get("mult_threshold", 1.5))
 
     cfg.host     = c.get("host",         cfg.host)
     cfg.port_in  = int(c.get("port",     cfg.port_in))
     cfg.port_out = int(c.get("output_port", cfg.port_out))
 
-    cfg.lerp_factor       = float(c.get("lerp_factor",       cfg.lerp_factor))
     cfg.buffer_size       = int(c.get("buffer_size",         cfg.buffer_size))
     cfg.bar_width_percent = int(c.get("bar_width_percent",   cfg.bar_width_percent))
 
@@ -134,12 +135,13 @@ def save_config(config_file: str, cfg: AppConfig, window_pos: Tuple[int, int] | 
         "show_controls":         cfg.show_controls,
         "scale_mode":            getattr(cfg, "scale_mode",      SCALE_RELATIVE),
         "fixed_scale_max":       getattr(cfg, "fixed_scale_max", 500.0),
+        "mult_baseline_factor":  getattr(cfg, "mult_baseline_factor", 6),
+        "mult_threshold":        getattr(cfg, "mult_threshold", 1.5),
 
         "host":         cfg.host,
         "port":         cfg.port_in,
         "output_port":  cfg.port_out,
 
-        "lerp_factor":       cfg.lerp_factor,
         "buffer_size":       cfg.buffer_size,
         "bar_width_percent": cfg.bar_width_percent,
 

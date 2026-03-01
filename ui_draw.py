@@ -76,28 +76,16 @@ def get_quality_status(cfg: AppConfig, state: AppState, input_client_count: int)
     age = (now - state.last_rx_time) if state.last_rx_time > 0 else 999.0
 
     if input_client_count == 0 and age > (cfg.stale_sec * 1.5):
-        return (220, 70, 70), "DISCONNECTED"
+        return (220, 70, 70), f"{age:.1f}s"
 
     if age <= cfg.green_rx_sec:
         col = (70, 200, 90)
-        txt = f"OK {age:.1f}s"
     elif age <= cfg.yellow_rx_sec:
         col = (230, 200, 70)
-        txt = f"LAG {age:.1f}s"
     else:
         col = (220, 70, 70)
-        txt = f"STALE {age:.1f}s"
 
-    stale_parts = []
-    if state.last_rx_time > 0:
-        if (now - state.last_change_bid_t)   > cfg.stale_sec: stale_parts.append("BID")
-        if (now - state.last_change_ask_t)   > cfg.stale_sec: stale_parts.append("ASK")
-        if (now - state.last_change_price_t) > cfg.stale_sec: stale_parts.append("PRICE")
-
-    if stale_parts and age <= cfg.yellow_rx_sec:
-        txt += " | S:" + ",".join(stale_parts)
-
-    return col, txt
+    return col, f"{age:.1f}s"
 
 
 def draw_button(screen, rect, text, font_std, cfg: AppConfig,
@@ -194,7 +182,7 @@ def _compute_bar_heights(cfg: AppConfig, state: AppState, chart_height: int) -> 
 
 
 def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
-               font_big, font_std, font_small, font_micro,
+               font_big, font_std, font_small, font_micro, font_micro_bold,
                hue_bar_surface, sat_val_overlay,
                input_client_count: int):
 
@@ -244,21 +232,11 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
         screen.blit(status_surf, (x_cursor, y_top))
 
     # ------------------------------------------------------------------
-    # Oben rechts: Scale-Modus Label  +  Vol-Multiplier
-    # Beispiel:  "FIX  3.2x"
+    # Oben rechts: Scale-Modus Label
     # ------------------------------------------------------------------
     scale_short, scale_col, _ = _SCALE_LABELS.get(scale_mode, _SCALE_LABELS[SCALE_RELATIVE])
-    vol_mult = getattr(state, "vol_multiplier", 1.0)
-    mult_col = _multiplier_color(vol_mult)
-
     mode_surf = font_micro.render(scale_short, True, scale_col)
-    mult_surf = font_micro.render(f"{vol_mult:.1f}x", True, mult_col)
-
-    gap = 6
-    total_w  = mode_surf.get_width() + gap + mult_surf.get_width()
-    right_x  = cfg.window_w - 42   # links vom Menu-Button
-    screen.blit(mode_surf, (right_x - total_w, y_top))
-    screen.blit(mult_surf, (right_x - mult_surf.get_width(), y_top))
+    screen.blit(mode_surf, (cfg.window_w - 42 - mode_surf.get_width(), y_top))
 
     # ------------------------------------------------------------------
     # Balken
@@ -290,6 +268,17 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
         if state.current_ask_vol >= fixed_max:
             pygame.draw.line(screen, (220, 60, 60),
                              (r_ask.left, chart_top_y), (r_ask.right, chart_top_y), 2)
+
+    # Multiplier im Balken (oben zentriert, nur wenn >= Schwellwert)
+    _thr      = getattr(cfg, "mult_threshold", 1.5)
+    _bid_mult = getattr(state, "bid_multiplier", 1.0)
+    _ask_mult = getattr(state, "ask_multiplier", 1.0)
+    if _bid_mult >= _thr and h_bid > 20:
+        ms = font_micro_bold.render(f"{_bid_mult:.1f}x", True, cfg.color_text)
+        screen.blit(ms, (r_bid.centerx - ms.get_width() // 2, r_bid.y + 4))
+    if _ask_mult >= _thr and h_ask > 20:
+        ms = font_micro_bold.render(f"{_ask_mult:.1f}x", True, cfg.color_text)
+        screen.blit(ms, (r_ask.centerx - ms.get_width() // 2, r_ask.y + 4))
 
     # Volumen-Labels
     str_bid = format_number(cfg, state.current_bid_vol)
@@ -447,9 +436,10 @@ def render_all(screen, rects, hover_states, cfg: AppConfig, state: AppState,
             dim.fill((0, 0, 0))
             screen.blit(dim, rects["inp_fixed_max"].topleft)
 
-        draw_text_input(screen, rects["inp_lerp"],  state.input_lerp_str,   font_small, font_std, cfg, state.active_adv_input_idx == 1, "Animation: smooth (0) < (100) fast:")
-        draw_text_input(screen, rects["inp_buff"],  state.input_buffer_str, font_small, font_std, cfg, state.active_adv_input_idx == 2, "Buffer Size:")
-        draw_text_input(screen, rects["inp_width"], state.input_width_str,  font_small, font_std, cfg, state.active_adv_input_idx == 3, "Bar Width (%):")
+        draw_text_input(screen, rects["inp_buff"],      state.input_buffer_str,    font_small, font_std, cfg, state.active_adv_input_idx == 1, "Buffer Size:")
+        draw_text_input(screen, rects["inp_width"],     state.input_width_str,     font_small, font_std, cfg, state.active_adv_input_idx == 2, "Bar Width (%):")
+        draw_text_input(screen, rects["inp_mult_base"], state.input_mult_base_str, font_small, font_std, cfg, state.active_adv_input_idx == 3, "Mult Baseline (xFenster):")
+        draw_text_input(screen, rects["inp_mult_thr"],  state.input_mult_thr_str,  font_small, font_std, cfg, state.active_adv_input_idx == 4, "Mult Schwelle:")
 
         draw_button(screen, rects["btn_buf_arrow"], "?",      font_std, cfg, hover_states.get("buf_arrow"),  (70, 70, 70))
         draw_button(screen, rects["adv_save"],      "Save",   font_std, cfg, hover_states.get("adv_save"),   (40, 100, 40))
